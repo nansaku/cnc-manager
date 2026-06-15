@@ -4213,6 +4213,50 @@ if (!localStorage.getItem('cnc_migration_consign_20260615')) {
   scheduleCloudSync();
 }
 
+// ── 委託販売清算書 v2: 商品コード紐づけ+発送記録 ──
+if (!localStorage.getItem('cnc_migration_consign_20260615_v2')) {
+  const _u = uid;
+  // 既存の委託販売受注に商品コードを紐づけ
+  const codeMap = {
+    'ディーゼルエンブレム グレー': 'NDS-104',
+    'アルミ給油口レバー ブラック': 'NDS-115', 'アルミ給油口レバー シルバー': 'NDS-115',
+    'アルミ給油口レバー レッド': 'NDS-115', 'アルミ給油口レバー ブラウン': 'NDS-115',
+    'アルミ給油口レバー ブルー': 'NDS-115',
+    '40メーターパネル アルミキーホルダー シルバー': '2026003',
+    'アルミバックドアハンドル ブラック': 'NDS-101', 'アルミバックドアハンドル シルバー': 'NDS-101',
+    'アルミバックドアハンドル レッド': 'NDS-101', 'アルミバックドアハンドル オレンジ': 'NDS-101',
+    'アルミバックドアハンドル ブルー': 'NDS-101',
+    '1HZキーホルダー シルバー': 'NDS-105'
+  };
+  for (const o of orders) {
+    if (o.note === '委託販売清算書より' && o.items) {
+      for (const item of o.items) {
+        if (!item.code && codeMap[item.name]) item.code = codeMap[item.name];
+      }
+    }
+  }
+  DB.set('orders', orders);
+  // 発送記録を追加（3回のクリックポスト発送）
+  const consignShipments = [
+    { id:_u(), customer:'佐藤 伸吾（委託販売）', content:'アルミ給油口レバー 5色',
+      items:[{code:'NDS-115',qty:5,note:'ブラック/シルバー/レッド/ブラウン/ブルー'}],
+      recipient:'佐藤 伸吾', postalCode:'701-0151', address:'岡山県岡山市北区平野992-9-305', building:'',
+      shippedDate:'2026-05-27', tracking:'', note:'委託販売 クリックポスト' },
+    { id:_u(), customer:'佐藤 伸吾（委託販売）', content:'アルミバックドアハンドル 5色',
+      items:[{code:'NDS-101',qty:5,note:'ブラック/シルバー/レッド/オレンジ/ブルー'}],
+      recipient:'佐藤 伸吾', postalCode:'701-0151', address:'岡山県岡山市北区平野992-9-305', building:'',
+      shippedDate:'2026-05-30', tracking:'', note:'委託販売 クリックポスト' },
+    { id:_u(), customer:'佐藤 伸吾（委託販売）', content:'アルミバックドアハンドル5色+ディーゼルエンブレム4個',
+      items:[{code:'NDS-101',qty:5,note:'ブラック/シルバー/レッド/オレンジ/ブルー'},{code:'NDS-104',qty:4,note:'グレー'}],
+      recipient:'佐藤 伸吾', postalCode:'701-0151', address:'岡山県岡山市北区平野992-9-305', building:'',
+      shippedDate:'2026-06-13', tracking:'', note:'委託販売 クリックポスト' }
+  ];
+  shipments = shipments.concat(consignShipments);
+  DB.set('shipments', shipments);
+  localStorage.setItem('cnc_migration_consign_20260615_v2', '1');
+  scheduleCloudSync();
+}
+
 updateOrderBadge();
 updateExpensesBadge();
 renderDashboard();
