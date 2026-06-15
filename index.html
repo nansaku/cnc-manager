@@ -4297,7 +4297,7 @@ if (!localStorage.getItem('cnc_migration_consign_20260615_v2')) {
 }
 
 // 委託販売清算書(20260615): 出荷済み→販売済みに自動変換（FIFO）
-if (!localStorage.getItem('cnc_migration_sold_20260615_v3')) {
+if (!localStorage.getItem('cnc_migration_sold_20260615_v4')) {
   const pdfSales = [
     { name:'ディーゼルエンブレム グレー', code:'NDS-104', qty:5, unitPrice:11200, keywords:['エンブレム'] },
     { name:'アルミ給油口レバー（5色）', code:'NDS-115', qty:5, unitPrice:4500, keywords:['給油口'] },
@@ -4355,7 +4355,7 @@ if (!localStorage.getItem('cnc_migration_sold_20260615_v3')) {
   if (totalChanged > 0) resultMsgs.push('✅ ' + totalChanged + '件の出荷を販売済みに変換しました');
   for (const m of msgs) resultMsgs.push('⚠ ' + m);
   if (resultMsgs.length > 0) localStorage.setItem('cnc_sold_notify', JSON.stringify(resultMsgs));
-  localStorage.setItem('cnc_migration_sold_20260615_v3', '1');
+  localStorage.setItem('cnc_migration_sold_20260615_v4', '1');
   scheduleCloudSync();
 }
 
