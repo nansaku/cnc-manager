@@ -4270,20 +4270,48 @@ if (!localStorage.getItem('cnc_migration_consign_20260615_v2')) {
 
 // 出荷済み→販売済みに変更（FIFO、清算書の販売単価付き）
 if (!localStorage.getItem('cnc_migration_sold_20260615')) {
-  const priceMap = { 'NDS-104':11200, 'NDS-115':4500, '2026003':2200, 'NDS-101':6600, 'NDS-105':450 };
-  let changed = 0;
-  for (const r of finishedStock) {
-    if (r.type === 'shipped' && r.note && r.note.indexOf('委託販売') >= 0 && priceMap[r.code] !== undefined) {
-      r.type = 'sold';
-      r.price = priceMap[r.code];
-      changed++;
+  const soldExpected = [
+    { code:'NDS-104', qty:5, price:11200, name:'ディーゼルエンブレム グレー' },
+    { code:'NDS-115', qty:5, price:4500, name:'アルミ給油口レバー' },
+    { code:'2026003', qty:1, price:2200, name:'アルミキーホルダー' },
+    { code:'NDS-101', qty:10, price:6600, name:'アルミバックドアハンドル' },
+    { code:'NDS-105', qty:2, price:450, name:'1HZキーホルダー' }
+  ];
+  const msgs = [];
+  for (const exp of soldExpected) {
+    const shippedEntries = finishedStock
+      .filter(r => r.code === exp.code && r.type === 'shipped')
+      .sort((a,b) => (a.date||'').localeCompare(b.date||''));
+    let remaining = exp.qty;
+    let converted = 0;
+    for (const r of shippedEntries) {
+      if (remaining <= 0) break;
+      const q = parseFloat(r.qty) || 0;
+      if (q <= remaining) {
+        r.type = 'sold';
+        r.price = exp.price;
+        remaining -= q;
+        converted += q;
+      } else {
+        const origQty = r.qty;
+        r.qty = remaining;
+        r.type = 'sold';
+        r.price = exp.price;
+        finishedStock.push({ id:uid(), code:exp.code, type:'shipped', qty:origQty - remaining, date:r.date, note:r.note });
+        converted += remaining;
+        remaining = 0;
+      }
+    }
+    if (remaining > 0) {
+      msgs.push(exp.name + '(' + exp.code + '): 販売' + exp.qty + '個中、出荷データ' + converted + '個のみ → 残り' + remaining + '個の出荷が未登録');
     }
   }
-  if (changed > 0) {
-    DB.set('finishedStock', finishedStock);
-    scheduleCloudSync();
+  DB.set('finishedStock', finishedStock);
+  if (msgs.length > 0) {
+    setTimeout(function(){ alert('【販売済み変換の差分】\n\n' + msgs.join('\n\n')); }, 500);
   }
   localStorage.setItem('cnc_migration_sold_20260615', '1');
+  scheduleCloudSync();
 }
 
 updateOrderBadge();
