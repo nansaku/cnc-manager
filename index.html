@@ -4286,49 +4286,65 @@ if (!localStorage.getItem('cnc_migration_consign_20260615_v2')) {
   scheduleCloudSync();
 }
 
-// 出荷済み→販売済みに変更（FIFO、清算書の販売単価付き）
-if (!localStorage.getItem('cnc_migration_sold_20260615')) {
-  const soldExpected = [
-    { code:'NDS-104', qty:5, price:11200, name:'ディーゼルエンブレム グレー' },
-    { code:'NDS-115', qty:5, price:4500, name:'アルミ給油口レバー' },
-    { code:'2026003', qty:1, price:2200, name:'アルミキーホルダー' },
-    { code:'NDS-101', qty:10, price:6600, name:'アルミバックドアハンドル' },
-    { code:'NDS-105', qty:2, price:450, name:'1HZキーホルダー' }
+// 委託販売清算書(20260615): 出荷済み→販売済みに自動変換（FIFO）
+if (!localStorage.getItem('cnc_migration_sold_20260615_v3')) {
+  const pdfSales = [
+    { name:'ディーゼルエンブレム グレー', code:'NDS-104', qty:5, unitPrice:11200, keywords:['エンブレム'] },
+    { name:'アルミ給油口レバー（5色）', code:'NDS-115', qty:5, unitPrice:4500, keywords:['給油口'] },
+    { name:'アルミキーホルダー', code:'2026003', qty:1, unitPrice:2200, keywords:['40メーター','アルミキーホルダー'] },
+    { name:'アルミバックドアハンドル（10個）', code:'NDS-101', qty:10, unitPrice:6600, keywords:['バックドア','パックドア'] },
+    { name:'1HZキーホルダー', code:'NDS-105', qty:2, unitPrice:450, keywords:['1HZ','1hz'] }
   ];
   const msgs = [];
-  for (const exp of soldExpected) {
-    const shippedEntries = finishedStock
-      .filter(r => r.code === exp.code && r.type === 'shipped')
+  let totalChanged = 0;
+
+  // ① 完成在庫(finishedStock)の出荷→販売済み
+  for (const sale of pdfSales) {
+    const entries = finishedStock
+      .filter(r => r.code === sale.code && r.type === 'shipped')
       .sort((a,b) => (a.date||'').localeCompare(b.date||''));
-    let remaining = exp.qty;
-    let converted = 0;
-    for (const r of shippedEntries) {
-      if (remaining <= 0) break;
+    let remain = sale.qty;
+    for (const r of entries) {
+      if (remain <= 0) break;
       const q = parseFloat(r.qty) || 0;
-      if (q <= remaining) {
-        r.type = 'sold';
-        r.price = exp.price;
-        remaining -= q;
-        converted += q;
+      if (q <= remain) {
+        r.type = 'sold'; r.price = sale.unitPrice; remain -= q; totalChanged++;
       } else {
-        const origQty = r.qty;
-        r.qty = remaining;
-        r.type = 'sold';
-        r.price = exp.price;
-        finishedStock.push({ id:uid(), code:exp.code, type:'shipped', qty:origQty - remaining, date:r.date, note:r.note });
-        converted += remaining;
-        remaining = 0;
+        finishedStock.push({ id:uid(), code:sale.code, type:'shipped', qty:q - remain, date:r.date, note:r.note });
+        r.qty = remain; r.type = 'sold'; r.price = sale.unitPrice; remain = 0; totalChanged++;
       }
     }
-    if (remaining > 0) {
-      msgs.push(exp.name + '(' + exp.code + '): 販売' + exp.qty + '個中、出荷データ' + converted + '個のみ → 残り' + remaining + '個の出荷が未登録');
+    if (remain > 0) {
+      msgs.push('【完成在庫】' + sale.name + ': 販売' + sale.qty + '個中 出荷が' + remain + '個 未登録');
     }
   }
   DB.set('finishedStock', finishedStock);
-  if (msgs.length > 0) {
-    setTimeout(function(){ alert('【販売済み変換の差分】\n\n' + msgs.join('\n\n')); }, 500);
+
+  // ② 在庫管理(invUsages)の出荷→販売済み
+  const shippedUsages = invUsages
+    .filter(u => u.purpose === 'shipped')
+    .sort((a,b) => (a.date||'').localeCompare(b.date||''));
+  for (const u of shippedUsages) {
+    const item = inventory.find(i => i.id === u.invId);
+    const itemName = item ? item.name : '';
+    let matched = null;
+    for (const sale of pdfSales) {
+      if (sale.keywords.some(k => itemName.toLowerCase().includes(k.toLowerCase()))) { matched = sale; break; }
+    }
+    if (matched) {
+      u.purpose = 'sold';
+      u.salePrice = Number(u.qty) * matched.unitPrice;
+      totalChanged++;
+    } else if (itemName) {
+      msgs.push('【在庫管理】' + itemName + '(数量' + u.qty + '): 清算書と一致する商品が不明');
+    }
   }
-  localStorage.setItem('cnc_migration_sold_20260615', '1');
+  DB.set('invUsages', invUsages);
+
+  if (msgs.length > 0) {
+    setTimeout(function(){ alert('【委託販売 出荷→販売済み 変換結果】\n\n' + msgs.join('\n\n') + '\n\n※ 未登録分は在庫管理から出荷を記録してください'); }, 500);
+  }
+  localStorage.setItem('cnc_migration_sold_20260615_v3', '1');
   scheduleCloudSync();
 }
 
