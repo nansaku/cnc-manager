@@ -237,6 +237,7 @@
     <div class="nav-item" onclick="showPage('expenses')"><span class="icon">💳</span><span>支出管理</span><span class="unproc-badge" id="expenses-badge"></span></div>
     <div class="nav-item" onclick="showPage('shipping')"><span class="icon">📮</span><span>発送管理</span></div>
     <div class="nav-item" onclick="showPage('advance')"><span class="icon">💴</span><span>立替管理</span></div>
+    <div class="nav-item" onclick="showPage('tasks')" id="nav-tasks"><span class="icon">🔔</span><span>やること</span><span class="nav-badge" id="tasks-badge"></span></div>
     <div class="sidebar-footer">
       <button class="scan-btn" onclick="openScan()"><span style="font-size:16px">📷</span><span>スキャン入力 (F2)</span></button>
       <button class="backup-btn" onclick="setupBackup()">
@@ -927,6 +928,14 @@
       </div>
     </div>
 
+    <!-- ── TASKS ── -->
+    <div class="page" id="page-tasks">
+      <div class="page-title">やること</div>
+      <div class="page-sub">清算書などから自動生成されたタスク — 完了すると消えます</div>
+      <div id="tasks-list"></div>
+      <div id="tasks-empty" style="display:none;color:var(--text3);font-size:14px;padding:30px 0;text-align:center">✅ すべて完了！やることはありません</div>
+    </div>
+
     <!-- ── ADVANCE ── -->
     <div class="page" id="page-advance">
       <div class="page-title">立替管理</div>
@@ -1116,7 +1125,7 @@ function jobNoBadge(no) {
 }
 
 // ── Navigation ───────────────────────────────────────────────
-const PAGES = ['dashboard','inventory','machines','usage','cost','outsource','customers','products','projects','orders','cart','expenses','shipping','advance'];
+const PAGES = ['dashboard','inventory','machines','usage','cost','outsource','customers','products','projects','orders','cart','expenses','shipping','advance','tasks'];
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1139,6 +1148,7 @@ function showPage(id) {
   if (id === 'expenses')   { renderExpenseCategoryList(); populateExpenseCatDropdown(); renderExpenses(); updateExpensesBadge(); }
   if (id === 'shipping')   { if(!document.getElementById('ship-lines-wrap').children.length) addShipLine(); refreshShipLineDropdowns(); renderShipments(); }
   if (id === 'advance')    { populateRetAdvDropdown(); renderAdvances(); renderReturns(); updateAdvSummary(); }
+  if (id === 'tasks')      renderTasks();
 }
 
 // ── Machine helpers ──────────────────────────────────────────
@@ -2021,16 +2031,90 @@ function saveMfSettingsOs() {
   toast('MF勘定科目設定を保存しました');
 }
 
+// ── Tasks (やること) ─────────────────────────────────────────
+function getAppTasks() { return JSON.parse(localStorage.getItem('cnc_tasks') || '[]'); }
+function saveAppTasks(t) { localStorage.setItem('cnc_tasks', JSON.stringify(t)); }
+function renderTasks() {
+  const tasks = getAppTasks().filter(t => !t.done);
+  const listEl = document.getElementById('tasks-list');
+  const emptyEl = document.getElementById('tasks-empty');
+  if (!listEl) return;
+  if (!tasks.length) {
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = '';
+    updateTasksBadge();
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+  listEl.innerHTML = tasks.map(t => {
+    if (t.type === 'fin_ship') {
+      return '<div class="task-card" onclick="taskAction(\'' + t.id + '\')" style="cursor:pointer;padding:14px 16px;margin-bottom:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;transition:box-shadow .15s"'
+        + ' onmouseover="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,.08)\'" onmouseout="this.style.boxShadow=\'none\'">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+        + '<span style="font-size:16px">📤</span>'
+        + '<span style="font-weight:700;font-size:14px">' + t.name + '</span>'
+        + '<span class="badge badge-blue" style="font-size:10px">' + t.code + '</span>'
+        + '</div>'
+        + '<div style="font-size:13px;color:var(--text2)">完成在庫から <strong>' + t.need + '個</strong> の出荷記録が未登録です（販売単価 ' + fmt(t.unitPrice) + '）</div>'
+        + '<div style="font-size:11px;color:var(--accent);margin-top:6px">クリックで出荷を記録 →</div>'
+        + '</div>';
+    }
+    return '';
+  }).join('');
+  updateTasksBadge();
+}
+function updateTasksBadge() {
+  const tasks = getAppTasks().filter(t => !t.done);
+  const badge = document.getElementById('tasks-badge');
+  if (badge) badge.textContent = tasks.length || '';
+}
+function taskAction(taskId) {
+  const tasks = getAppTasks();
+  const t = tasks.find(x => x.id === taskId);
+  if (!t) return;
+  if (t.type === 'fin_ship') {
+    const p = getProductByCode(t.code);
+    const name = p ? p.name : t.name;
+    const val = prompt(name + '\n出荷 ' + t.need + '個 を記録します。\n数量を確認してください:', t.need);
+    if (val === null) return;
+    const qty = parseInt(val);
+    if (isNaN(qty) || qty <= 0) { alert('1以上の数値を入力してください'); return; }
+    finishedStock.push({ id:uid(), code:t.code, type:'shipped', qty, date:new Date().toISOString().slice(0,10), note:'委託販売 清算書より' });
+    // 即座に販売済みに変換
+    const entry = finishedStock[finishedStock.length - 1];
+    entry.type = 'sold';
+    entry.price = t.unitPrice;
+    DB.set('finishedStock', finishedStock);
+    // タスク更新
+    t.need -= qty;
+    if (t.need <= 0) t.done = true;
+    saveAppTasks(tasks);
+    renderTasks();
+    scheduleCloudSync();
+    toast(name + ' ' + qty + '個を販売済みとして記録しました');
+  }
+}
+function checkTasksAutoComplete() {
+  const tasks = getAppTasks();
+  let changed = false;
+  for (const t of tasks) {
+    if (t.done) continue;
+    if (t.type === 'fin_ship') {
+      const fin = calcFinishedStock(t.code);
+      if (fin.sold >= t.need) { t.done = true; changed = true; }
+    }
+  }
+  if (changed) saveAppTasks(tasks);
+}
+
 // ── Dashboard ────────────────────────────────────────────────
 function renderDashboard() {
   const notifyEl = document.getElementById('dash-notify');
-  const notifyData = JSON.parse(localStorage.getItem('cnc_sold_notify') || 'null');
-  if (notifyEl && notifyData && notifyData.length) {
-    notifyEl.innerHTML = '<div style="margin-bottom:14px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px">'
-      + '<div style="font-weight:700;margin-bottom:6px">📋 委託販売清算書 変換結果</div>'
-      + notifyData.map(m => '<div style="margin-bottom:3px">' + m + '</div>').join('')
-      + '<div style="margin-top:8px"><span style="cursor:pointer;color:var(--accent);font-size:12px;text-decoration:underline" onclick="localStorage.removeItem(\'cnc_sold_notify\');this.closest(\'div[style]\').remove()">閉じる</span></div>'
-      + '</div>';
+  const tasks = getAppTasks().filter(t => !t.done);
+  if (notifyEl && tasks.length) {
+    notifyEl.innerHTML = '<div style="margin-bottom:14px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer" onclick="showPage(\'tasks\')">'
+      + '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🔔</span><span style="font-weight:700">' + tasks.length + '件のやることがあります</span>'
+      + '<span style="font-size:11px;color:var(--accent)">→ 確認する</span></div></div>';
   } else if (notifyEl) { notifyEl.innerHTML = ''; }
   const invTotal  =inventory.reduce((s,i)=>s+i.qty*i.price,0);
   const bookTotal =machines.reduce((s,m)=>s+machineBookValue(m),0);
@@ -4351,16 +4435,29 @@ if (!localStorage.getItem('cnc_migration_sold_20260615_v4')) {
   }
   DB.set('invUsages', invUsages);
 
-  const resultMsgs = [];
-  if (totalChanged > 0) resultMsgs.push('✅ ' + totalChanged + '件の出荷を販売済みに変換しました');
-  for (const m of msgs) resultMsgs.push('⚠ ' + m);
-  if (resultMsgs.length > 0) localStorage.setItem('cnc_sold_notify', JSON.stringify(resultMsgs));
+  const tasks = JSON.parse(localStorage.getItem('cnc_tasks') || '[]');
+  if (totalChanged > 0) {
+    tasks.push({ id:uid(), type:'info', msg: totalChanged + '件の出荷を販売済みに変換しました', done:true, auto:true, created: new Date().toISOString().slice(0,10) });
+  }
+  for (const sale of pdfSales) {
+    const finEntries = finishedStock.filter(r => r.code === sale.code && r.type === 'shipped');
+    const finSold = finishedStock.filter(r => r.code === sale.code && r.type === 'sold').reduce((s,r) => s + (parseFloat(r.qty)||0), 0);
+    const finShipped = finEntries.reduce((s,r) => s + (parseFloat(r.qty)||0), 0);
+    const need = sale.qty - finSold;
+    if (need > 0 && finShipped < need) {
+      const short = need - finShipped;
+      tasks.push({ id:uid(), type:'fin_ship', code:sale.code, name:sale.name, need:short, unitPrice:sale.unitPrice, done:false, created: new Date().toISOString().slice(0,10) });
+    }
+  }
+  localStorage.setItem('cnc_tasks', JSON.stringify(tasks));
+  localStorage.removeItem('cnc_sold_notify');
   localStorage.setItem('cnc_migration_sold_20260615_v4', '1');
   scheduleCloudSync();
 }
 
 updateOrderBadge();
 updateExpensesBadge();
+updateTasksBadge();
 renderDashboard();
 initBackup();
 initFirebase();
