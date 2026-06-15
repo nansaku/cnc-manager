@@ -1328,6 +1328,22 @@ function addInvUsage() {
   renderInventory();
   toast(`${item.name} を ${qty} ${item.unit} 使用しました（残 ${rem - qty}）`);
 }
+function markInvUsageSold(usageId) {
+  const u = invUsages.find(x => x.id === usageId);
+  if (!u) return;
+  const item = inventory.find(i => i.id === u.invId);
+  const name = item ? item.name : '';
+  const val = prompt(name + ' ' + u.qty + '個\n販売金額(円)を入力:');
+  if (val === null) return;
+  const price = parseFloat(val);
+  if (isNaN(price) || price < 0) { alert('有効な金額を入力してください'); return; }
+  u.purpose = 'sold';
+  u.salePrice = price;
+  DB.set('invUsages', invUsages);
+  renderInventory();
+  scheduleCloudSync();
+  toast('販売済みに変更しました');
+}
 function deleteInvUsage(usageId) {
   if (!confirm('この使用記録を削除しますか？')) return;
   invUsages = invUsages.filter(u => u.id !== usageId);
@@ -1505,9 +1521,10 @@ function renderInventory() {
           priceInfo = fmt(uCost);
         }
         const shortUDate = (u.date||'').replace(/^\d{4}-/,'');
+        const soldBtn = u.purpose === 'shipped' ? ' <span style="cursor:pointer;font-size:10px;color:var(--blue);text-decoration:underline" onclick="markInvUsageSold(\''+u.id+'\')">販売済みにする</span>' : '';
         filteredRows.push(`<tr style="background:rgba(79,142,247,.03)">
           <td style="white-space:nowrap;padding-left:20px;color:var(--text3);font-size:11px">↳ ${shortUDate||'—'}</td>
-          <td colspan="2" style="font-size:11px;color:var(--text2)"><span class="badge ${purposeColor[u.purpose]||'badge-blue'}" style="font-size:10px">${purposeLabel[u.purpose]||'使用'}</span> ${u.note||''}</td>
+          <td colspan="2" style="font-size:11px;color:var(--text2)"><span class="badge ${purposeColor[u.purpose]||'badge-blue'}" style="font-size:10px">${purposeLabel[u.purpose]||'使用'}</span> ${u.note||''}${soldBtn}</td>
           <td></td>
           <td></td>
           <td class="num" style="font-size:11px;color:var(--red)">-${Number(u.qty)}</td>
