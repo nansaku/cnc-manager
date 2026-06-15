@@ -4253,6 +4253,18 @@ if (!localStorage.getItem('cnc_migration_consign_20260615_v2')) {
   ];
   shipments = shipments.concat(consignShipments);
   DB.set('shipments', shipments);
+  // 完成在庫から出荷分を減算
+  const stockEntries = [
+    { id:_u(), code:'NDS-104', type:'shipped', qty:1, date:'2026-05-15', note:'委託販売 佐藤伸吾 エンブレム グレー' },
+    { id:_u(), code:'NDS-115', type:'shipped', qty:5, date:'2026-05-27', note:'委託販売 佐藤伸吾 給油口レバー5色' },
+    { id:_u(), code:'2026003', type:'shipped', qty:1, date:'2026-05-28', note:'委託販売 佐藤伸吾 キーホルダー' },
+    { id:_u(), code:'NDS-101', type:'shipped', qty:5, date:'2026-05-31', note:'委託販売 佐藤伸吾 バックドアハンドル5色' },
+    { id:_u(), code:'NDS-105', type:'shipped', qty:2, date:'2026-06-01', note:'委託販売 佐藤伸吾 1HZキーホルダー' },
+    { id:_u(), code:'NDS-101', type:'shipped', qty:5, date:'2026-06-14', note:'委託販売 佐藤伸吾 バックドアハンドル5色' },
+    { id:_u(), code:'NDS-104', type:'shipped', qty:4, date:'2026-06-14', note:'委託販売 佐藤伸吾 エンブレム グレー4個' }
+  ];
+  finishedStock = finishedStock.concat(stockEntries);
+  DB.set('finishedStock', finishedStock);
   localStorage.setItem('cnc_migration_consign_20260615_v2', '1');
   scheduleCloudSync();
 }
