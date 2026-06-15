@@ -2099,26 +2099,6 @@ function qaAddFinished(code, type) {
   toast(label + ': ' + qty + '個 を記録しました');
   qaShowFound(p || { code, name: code, price: 0, id: '' });
 }
-function qaMarkSold(code) {
-  const p = getProductByCode(code);
-  const fin = calcFinishedStock(code);
-  const unsold = fin.shipped - fin.sold;
-  if (unsold <= 0) { alert('販売済みにできる出荷品がありません'); return; }
-  const name = p ? p.name : code;
-  const val = prompt(name + '\n出荷済み未販売: ' + unsold + '個\n販売済みにする数量を入力:');
-  if (val === null) return;
-  const qty = parseInt(val);
-  if (isNaN(qty) || qty <= 0) { alert('1以上の数値を入力してください'); return; }
-  if (qty > unsold) { alert('出荷済み未販売数(' + unsold + '個)を超えています'); return; }
-  const priceVal = prompt(name + ' ' + qty + '個\n販売単価(円)を入力:');
-  if (priceVal === null) return;
-  const price = parseFloat(priceVal);
-  if (isNaN(price) || price < 0) { alert('有効な金額を入力してください'); return; }
-  finishedStock.push({ id:uid(), code, type:'sold', qty, price, date: new Date().toISOString().slice(0,10), note:'' });
-  DB.set('finishedStock', finishedStock);
-  toast('販売済み: ' + qty + '個 × ' + fmt(price) + ' を記録しました');
-  qaShowFound(p || { code, name: code, price: 0, id: '' });
-}
 function qaShowFound(p) {
   const res = document.getElementById('qa-result');
   // 受注ベースの集計
@@ -2160,7 +2140,6 @@ function qaShowFound(p) {
         <div class="qa-action-btn" onclick="qaAddFinished('${p.code}','completed')"><span class="qa-a-icon">✅</span>完成を記録</div>
         <div class="qa-action-btn" onclick="qaAddFinished('${p.code}','onhand')"><span class="qa-a-icon">🤲</span>手持ちを追加</div>
         <div class="qa-action-btn" onclick="qaAddFinished('${p.code}','shipped')"><span class="qa-a-icon">📤</span>完成品を出荷</div>
-        ${(fin.shipped - fin.sold) > 0 ? '<div class="qa-action-btn" style="background:var(--blue);color:#fff" onclick="qaMarkSold(\''+p.code+'\')"><span class="qa-a-icon">💰</span>販売済みにする ('+(fin.shipped-fin.sold)+'個)</div>' : ''}
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">発送・受注</div>
       <div class="qa-actions" style="margin-bottom:10px">
@@ -4287,6 +4266,24 @@ if (!localStorage.getItem('cnc_migration_consign_20260615_v2')) {
   DB.set('finishedStock', finishedStock);
   localStorage.setItem('cnc_migration_consign_20260615_v2', '1');
   scheduleCloudSync();
+}
+
+// 出荷済み→販売済みに変更（FIFO、清算書の販売単価付き）
+if (!localStorage.getItem('cnc_migration_sold_20260615')) {
+  const priceMap = { 'NDS-104':11200, 'NDS-115':4500, '2026003':2200, 'NDS-101':6600, 'NDS-105':450 };
+  let changed = 0;
+  for (const r of finishedStock) {
+    if (r.type === 'shipped' && r.note && r.note.indexOf('委託販売') >= 0 && priceMap[r.code] !== undefined) {
+      r.type = 'sold';
+      r.price = priceMap[r.code];
+      changed++;
+    }
+  }
+  if (changed > 0) {
+    DB.set('finishedStock', finishedStock);
+    scheduleCloudSync();
+  }
+  localStorage.setItem('cnc_migration_sold_20260615', '1');
 }
 
 updateOrderBadge();
