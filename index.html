@@ -671,7 +671,7 @@
         </div>
       </div>
       <div class="table-wrap">
-        <table><thead><tr><th>商品コード</th><th>商品名</th><th>単価</th><th>完成在庫</th><th>受注数</th><th>販売数</th><th>受注残</th><th>カテゴリ</th><th>備考</th><th></th></tr></thead>
+        <table><thead><tr><th>商品コード</th><th>商品名</th><th>単価</th><th>完成在庫</th><th>出荷</th><th>販売済</th><th>受注数</th><th>販売数</th><th>受注残</th><th>カテゴリ</th><th></th></tr></thead>
         <tbody id="prod-table"></tbody></table>
       </div>
     </div>
@@ -2876,15 +2876,16 @@ function renderProducts() {
         <td>${p.name}</td>
         <td class="num">${p.price ? fmt(p.price) : '—'}</td>
         <td class="num"><span class="${finClass}"><strong>${fin.net || '—'}</strong></span></td>
+        <td class="num">${fin.shipped || '—'}</td>
+        <td class="num" style="color:var(--blue)">${fin.sold || '—'}</td>
         <td class="num">${s.qty || '—'}</td>
         <td class="num">${s.sold || '—'}</td>
         <td class="num">${s.qty ? orderRemain : '—'}</td>
         <td style="color:var(--text2)">${p.category||'—'}</td>
-        <td style="color:var(--text3)">${p.note||'—'}</td>
         <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editProduct('${p.id}')">編集</button> <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">削除</button></td>
       </tr>`;
       }).join('')
-    : '<tr class="empty-row"><td colspan="10">商品が登録されていません</td></tr>';
+    : '<tr class="empty-row"><td colspan="11">商品が登録されていません</td></tr>';
 }
 function getProductByCode(code) {
   return products.find(p => p.code === code);
