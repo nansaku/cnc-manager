@@ -2075,16 +2075,16 @@ function calcInvStock(productName) {
   return { inQty, outQty: usedQty, net: inQty - usedQty };
 }
 function calcFinishedStock(code) {
-  // 完成在庫: completed/onhand はプラス、shipped はマイナス
-  let completed = 0, onhand = 0, shipped = 0;
+  let completed = 0, onhand = 0, shipped = 0, sold = 0, salesAmount = 0;
   for (const r of finishedStock) {
     if (r.code !== code) continue;
     const q = parseFloat(r.qty) || 0;
     if (r.type === 'completed') completed += q;
     else if (r.type === 'onhand') onhand += q;
     else if (r.type === 'shipped') shipped += q;
+    else if (r.type === 'sold') { sold += q; salesAmount += q * (parseFloat(r.price) || 0); }
   }
-  return { completed, onhand, shipped, net: completed + onhand - shipped };
+  return { completed, onhand, shipped, sold, salesAmount, net: completed + onhand - shipped };
 }
 function qaAddFinished(code, type) {
   const p = getProductByCode(code);
@@ -2097,7 +2097,26 @@ function qaAddFinished(code, type) {
   finishedStock.push({ id:uid(), code, type, qty, date: new Date().toISOString().slice(0,10), note:'' });
   DB.set('finishedStock', finishedStock);
   toast(label + ': ' + qty + '個 を記録しました');
-  // 表示を更新
+  qaShowFound(p || { code, name: code, price: 0, id: '' });
+}
+function qaMarkSold(code) {
+  const p = getProductByCode(code);
+  const fin = calcFinishedStock(code);
+  const unsold = fin.shipped - fin.sold;
+  if (unsold <= 0) { alert('販売済みにできる出荷品がありません'); return; }
+  const name = p ? p.name : code;
+  const val = prompt(name + '\n出荷済み未販売: ' + unsold + '個\n販売済みにする数量を入力:');
+  if (val === null) return;
+  const qty = parseInt(val);
+  if (isNaN(qty) || qty <= 0) { alert('1以上の数値を入力してください'); return; }
+  if (qty > unsold) { alert('出荷済み未販売数(' + unsold + '個)を超えています'); return; }
+  const priceVal = prompt(name + ' ' + qty + '個\n販売単価(円)を入力:');
+  if (priceVal === null) return;
+  const price = parseFloat(priceVal);
+  if (isNaN(price) || price < 0) { alert('有効な金額を入力してください'); return; }
+  finishedStock.push({ id:uid(), code, type:'sold', qty, price, date: new Date().toISOString().slice(0,10), note:'' });
+  DB.set('finishedStock', finishedStock);
+  toast('販売済み: ' + qty + '個 × ' + fmt(price) + ' を記録しました');
   qaShowFound(p || { code, name: code, price: 0, id: '' });
 }
 function qaShowFound(p) {
@@ -2113,7 +2132,7 @@ function qaShowFound(p) {
   // 完成在庫の集計
   const fin = calcFinishedStock(p.code);
   const finColor = fin.net <= 0 ? 'color:var(--red)' : 'color:var(--green)';
-  const hasFin = fin.completed > 0 || fin.onhand > 0 || fin.shipped > 0;
+  const hasFin = fin.completed > 0 || fin.onhand > 0 || fin.shipped > 0 || fin.sold > 0;
   res.innerHTML = `
     <div class="qa-found">
       <div class="qa-found-header">
@@ -2125,7 +2144,7 @@ function qaShowFound(p) {
         <div style="display:flex;gap:18px;align-items:center;margin-bottom:6px">
           <span style="font-weight:600;min-width:70px">✅ 完成品</span>
           ${hasFin
-            ? '<span>完成: <strong>'+fin.completed+'</strong></span><span>手持ち: <strong>'+fin.onhand+'</strong></span><span>出荷: <strong>'+fin.shipped+'</strong></span><span>現在庫: <strong style="'+finColor+';font-size:16px">'+fin.net+'</strong></span>'
+            ? '<span>完成: <strong>'+fin.completed+'</strong></span><span>手持ち: <strong>'+fin.onhand+'</strong></span><span>出荷: <strong>'+fin.shipped+'</strong></span><span>販売済: <strong style="color:var(--blue)">'+fin.sold+'</strong></span><span>現在庫: <strong style="'+finColor+';font-size:16px">'+fin.net+'</strong></span>'+(fin.salesAmount?'<span>売上: <strong style="color:var(--blue)">'+fmt(fin.salesAmount)+'</strong></span>':'')
             : '<span style="color:var(--text3)">データなし</span>'}
         </div>
         <div style="display:flex;gap:18px;align-items:center;${hasInv||s.qty?'margin-bottom:6px':''}">
@@ -2141,6 +2160,7 @@ function qaShowFound(p) {
         <div class="qa-action-btn" onclick="qaAddFinished('${p.code}','completed')"><span class="qa-a-icon">✅</span>完成を記録</div>
         <div class="qa-action-btn" onclick="qaAddFinished('${p.code}','onhand')"><span class="qa-a-icon">🤲</span>手持ちを追加</div>
         <div class="qa-action-btn" onclick="qaAddFinished('${p.code}','shipped')"><span class="qa-a-icon">📤</span>完成品を出荷</div>
+        ${(fin.shipped - fin.sold) > 0 ? '<div class="qa-action-btn" style="background:var(--blue);color:#fff" onclick="qaMarkSold(\''+p.code+'\')"><span class="qa-a-icon">💰</span>販売済みにする ('+(fin.shipped-fin.sold)+'個)</div>' : ''}
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">発送・受注</div>
       <div class="qa-actions" style="margin-bottom:10px">
